@@ -48,8 +48,8 @@ cd ti2-2025-1-bueno
 ### 2. Create a virtual environment
 
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Linux/macOS
+python -m venv .venv
+source .venv/bin/activate  # On Linux/macOS
 venv\Scripts\activate     # On Windows
 ```
 

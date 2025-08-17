@@ -1,13 +1,15 @@
-from flask import Blueprint, request, render_template, jsonify, session
-from app.models.betting_adviser import BettingAdviser
+from flask import request, render_template, jsonify, session
+from flask_login import login_required
+from app.bot.models.betting_adviser import BettingAdviser
+from . import bot
 
-main = Blueprint('main', __name__)
-
-@main.route('/')
+@bot.route('/')
+@login_required
 def index():
     return render_template('index.html')
 
-@main.route('/select_sport', methods=['POST'])
+@bot.route('/select_sport', methods=['POST'])
+@login_required
 def select_sport():
     data = request.get_json()
     sport = data.get('sport', '').lower()
@@ -31,7 +33,8 @@ def select_sport():
         'next_message': first_question['message'],
     })
 
-@main.route('/get_response', methods=['POST'])
+@bot.route('/get_response', methods=['POST'])
+@login_required
 def get_bot_response():
     user_input = request.get_json().get('message', '').strip()
 

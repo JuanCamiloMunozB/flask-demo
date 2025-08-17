@@ -1,6 +1,6 @@
 from experta import *
-from app.models.base_models import BaseExpert
-from app.models.soccer.bayesian_net import SoccerBayesianNetwork
+from app.bot.models.base_models import BaseExpert
+from app.bot.models.soccer.bayesian_net import SoccerBayesianNetwork
 
 SPANISH_MAP = {
     'home_advantage': {'sí': 'home', 'si': 'home', 'no': 'away'},

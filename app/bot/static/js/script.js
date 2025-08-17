@@ -10,7 +10,7 @@ function selectSport(sport) {
     document.getElementById("sendBtn").disabled = false;
     addMessage("user", sport === 'soccer' ? "Quiero apostar en fútbol" : "Quiero apostar en basketball");
 
-    fetch("/select_sport", {
+    fetch("/bot/select_sport", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sport: sport })
@@ -38,7 +38,7 @@ function sendMessage() {
     // Mostrar mensaje de carga
     const loadingMsg = addMessage("bot", "Procesando información...", true);
 
-    fetch("/get_response", {
+    fetch("/bot/get_response", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: message })

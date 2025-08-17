@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Registro - Asistente de Apuestas</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('auth.static', filename='css/style.css') }}" />
+</head>
+<body>
+
+<div class="chat-container d-flex flex-column">
+  <div class="chat-header">
+    <div class="title">
+      <i class="fas fa-dice fa-lg me-2 icon-custom"></i>
+      <strong>Registro</strong>
+    </div>
+  </div>
+
+  <div class="chat-body p-4">
+    <form method="post" action="{{ url_for('auth.register') }}" novalidate>
+      {{ form.hidden_tag() }}
+
+      {% if form.errors %}
+      <div class="alert alert-danger">
+        <ul class="mb-0">
+          {% for field, errors in form.errors.items() %}
+            {% for err in errors %}
+              <li>{{ err }}</li>
+            {% endfor %}
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      <div class="mb-3">
+        {{ form.username.label(class_='form-label') }}
+        {{ form.username(class_='form-control input-dark', placeholder='Usuario') }}
+        {% for err in form.username.errors %}
+          <div class="text-danger small">{{ err }}</div>
+        {% endfor %}
+      </div>
+
+      <div class="mb-3">
+        {{ form.password.label(class_='form-label') }}
+        {{ form.password(class_='form-control input-dark', placeholder='Contraseña') }}
+        {% for err in form.password.errors %}
+          <div class="text-danger small">{{ err }}</div>
+        {% endfor %}
+      </div>
+
+      <div class="mb-3">
+        {{ form.confirm.label(class_='form-label') }}
+        {{ form.confirm(class_='form-control input-dark', placeholder='Confirma la contraseña') }}
+        {% for err in form.confirm.errors %}
+          <div class="text-danger small">{{ err }}</div>
+        {% endfor %}
+      </div>
+
+      <div class="d-grid gap-2">
+        {{ form.submit(class_='btn send-btn') }}
+      </div>
+    </form>
+
+    <div class="text-center mt-3">
+      <a href="{{ url_for('auth.login') }}" class="text-accent">¿Ya tienes cuenta? Inicia sesión</a>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

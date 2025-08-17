@@ -7,16 +7,16 @@ numpy==1.23.5
 pandas==1.5.3
 
 # Framework web y pruebas
-flask==2.2.5
+flask==2.3.0
 pytest==7.4.0
-
-# Telegram bot
-python-telegram-bot==20.7
-
-# Servidor de producción
-gunicorn
 
 python-dotenv>=1.0.0
 matplotlib
 psutil
 kagglehub
+flask-wtf
+flask-login
+flask-migrate
+flask-bcrypt
+flask-sqlalchemy
+psycopg2-binary

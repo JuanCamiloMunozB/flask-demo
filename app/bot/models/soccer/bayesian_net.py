@@ -1,6 +1,6 @@
 from pgmpy.models import BayesianNetwork
 from pgmpy.factors.discrete import TabularCPD
-from app.models.base_models import BaseBayesianNetwork
+from app.bot.models.base_models import BaseBayesianNetwork
 
 class SoccerBayesianNetwork(BaseBayesianNetwork):
     """

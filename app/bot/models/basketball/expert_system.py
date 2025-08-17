@@ -1,6 +1,6 @@
 from experta import *
-from app.models.base_models import BaseExpert
-from app.models.basketball.bayesian_net import BasketballBayesianNetwork
+from app.bot.models.base_models import BaseExpert
+from app.bot.models.basketball.bayesian_net import BasketballBayesianNetwork
 
 class BasketballFact(Fact):
     pass

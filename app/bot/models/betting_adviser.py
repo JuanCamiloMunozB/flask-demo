@@ -66,13 +66,13 @@ class SportFactory:
         sport = sport.lower()
         
         if sport == "soccer":
-            from app.models.soccer.expert_system import SoccerExpert
-            from app.models.soccer.bayesian_net import SoccerBayesianNetwork
+            from app.bot.models.soccer.expert_system import SoccerExpert
+            from app.bot.models.soccer.bayesian_net import SoccerBayesianNetwork
             return SoccerExpert(SoccerBayesianNetwork())
         
         elif sport == "basketball":
-            from app.models.basketball.expert_system import BasketballExpert
-            from app.models.basketball.bayesian_net import BasketballBayesianNetwork
+            from app.bot.models.basketball.expert_system import BasketballExpert
+            from app.bot.models.basketball.bayesian_net import BasketballBayesianNetwork
             return BasketballExpert(BasketballBayesianNetwork())
         
         else:
