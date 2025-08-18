@@ -1,8 +1,10 @@
 import os
 from app import create_app
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = create_app()
 
 if __name__ == '__main__':
-    debug = app.config.get('DEBUG', False)
-    app.run(debug=debug)
+    app.run(debug=os.getenv("FLASK_ENV") == "development")

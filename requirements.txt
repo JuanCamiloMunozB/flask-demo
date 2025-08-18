@@ -1,22 +1,35 @@
-# Sistema experto + red bayesiana
+# ----------------------------
+# Sistema experto + Red Bayesiana
+# ----------------------------
 experta==1.9.4
-pgmpy==0.1.18
+pgmpy==0.1.25           # compat. Py3.12
 
-# Requisitos binarios compatibles
-numpy==1.23.5
-pandas==1.5.3
+# ----------------------------
+# Requisitos binarios compatibles (Py3.12)
+# ----------------------------
+numpy==1.26.4           # compat. Py3.12
+pandas==2.2.2           # compat. Py3.12
 
+# ----------------------------
 # Framework web y pruebas
+# ----------------------------
 flask==2.3.0
 pytest==7.4.0
-
-python-dotenv>=1.0.0
-matplotlib
-psutil
-kagglehub
 flask-wtf
 flask-login
 flask-migrate
 flask-bcrypt
 flask-sqlalchemy
-psycopg2-binary
+
+# ----------------------------
+# Conexión a base de datos (Postgres / Supabase)
+# ----------------------------
+psycopg2-binary>=2.9.9  # incluye wheels para Py3.12
+python-dotenv>=1.0.0
+
+# ----------------------------
+# Utilidades adicionales
+# ----------------------------
+matplotlib
+psutil
+kagglehub
