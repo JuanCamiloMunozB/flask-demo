@@ -10,7 +10,7 @@ sendBtn.disabled = true;
 
 // =========================
 // Seleccionar deporte
-// =========================
+// =========================  
 async function selectSport(sport) {
   try {
     // Ocultar botones de selección

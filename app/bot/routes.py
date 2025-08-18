@@ -1,4 +1,4 @@
-from flask import request, render_template, jsonify, session as flask_session
+from flask import request, render_template, jsonify, session as flask_session, current_app
 from flask_login import login_required, current_user
 from app.bot.models.betting_adviser import BettingAdviser
 from app.extensions import db
@@ -10,49 +10,56 @@ from . import bot
 def index():
     return render_template('index.html')
 
+
 @bot.route('/select_sport', methods=['POST'])
 @login_required
 def select_sport():
-    data = request.get_json() or {}
-    sport = data.get('sport', '').lower()
+    try:
+        data = request.get_json() or {}
+        sport = (data.get('sport') or '').lower()
 
-    if sport not in ['soccer', 'basketball']:
-        return jsonify({'error': 'Invalid sport selected'}), 400
+        if sport not in ['soccer', 'basketball']:
+            return jsonify({'error': 'Invalid sport selected'}), 400
 
-    # Guardar el deporte en sesión y reiniciar variables
-    flask_session['sport'] = sport
-    flask_session['facts'] = []
-    flask_session['finished'] = False
+        # Estado en sesión (Flask)
+        flask_session['sport'] = sport
+        flask_session['facts'] = []
+        flask_session['finished'] = False
 
-    # Inicializa el asesor de apuestas
-    adviser = BettingAdviser(sport)
-    first_question = adviser.get_betting_advice([])
+        # Primera pregunta del asesor
+        adviser = BettingAdviser(sport)
+        first_question = adviser.get_betting_advice([])
+        flask_session['next_fact'] = first_question.get('next_fact')
 
-    flask_session['next_fact'] = first_question.get('next_fact', None)
+        # Crear sesión de chat persistente
+        chat_sess = ChatSession(
+            user_id=current_user.id,
+            sport=sport,
+            title=f"{sport.capitalize()} • {getattr(current_user, 'username', 'usuario')}"
+        )
+        db.session.add(chat_sess)
+        db.session.flush()  # obtenemos id sin cerrar la transacción
 
-    # === NUEVO: crear una sesión de chat persistente ===
-    chat_sess = ChatSession(
-        user_id=current_user.id,
-        sport=sport,
-        title=f"{sport.capitalize()} • {getattr(current_user, 'username', 'usuario')}"
-    )
-    db.session.add(chat_sess)
-    db.session.commit()
+        # Mensajes iniciales del asistente
+        confirm_text = f'Has seleccionado {sport.capitalize()}.'
+        initial_assistant_text = first_question['message']
 
-    # Guardar el primer mensaje del asistente
-    initial_assistant_text = first_question['message']
-    db.session.add(ChatMessage(session_id=chat_sess.id, role='assistant', content=initial_assistant_text))
-    # También guardamos el pequeño “confirm” que antes devolvías como message
-    confirm_text = f'Has seleccionado {sport.capitalize()}.'
-    db.session.add(ChatMessage(session_id=chat_sess.id, role='assistant', content=confirm_text))
-    db.session.commit()
+        db.session.add(ChatMessage(session_id=chat_sess.id, role='assistant', content=confirm_text))
+        db.session.add(ChatMessage(session_id=chat_sess.id, role='assistant', content=initial_assistant_text))
+        db.session.commit()
 
-    # Mantener respuesta original + añadir session_id
-    return jsonify({
-        'message': confirm_text,
-        'next_message': initial_assistant_text,
-        'session_id': chat_sess.id
-    })
+        return jsonify({
+            'message': confirm_text,
+            'next_message': initial_assistant_text,
+            'session_id': chat_sess.id
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        # Esto imprime el traceback completo en los logs de Render
+        current_app.logger.exception("Error en /bot/select_sport")
+        # Devolvemos JSON (para que el frontend no intente parsear HTML)
+        return jsonify({'error': 'server_error'}), 500
 
 @bot.route('/get_response', methods=['POST'])
 @login_required
