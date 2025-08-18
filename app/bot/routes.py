@@ -4,6 +4,7 @@ from app.bot.models.betting_adviser import BettingAdviser
 from app.extensions import db
 from app.models import ChatSession, ChatMessage
 from . import bot
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError, OperationalError
 
 @bot.route('/')
 @login_required
@@ -11,60 +12,77 @@ def index():
     return render_template('index.html')
 
 
+
+
 @bot.route('/select_sport', methods=['POST'])
 @login_required
 def select_sport():
     try:
-        # Acepta JSON silenciosamente para no lanzar BadRequest si no es válido
         data = request.get_json(silent=True) or {}
-
-        # Acepta 'sport' o 'message' como alias y normaliza
         sport = (data.get('sport') or data.get('message') or '').strip().lower()
         if not sport:
-            return jsonify({'error': "Falta 'sport' en el cuerpo JSON"}), 400
-
+            return jsonify({'error': "missing_param", 'where': 'validate', 'detail': "Falta 'sport'"}), 400
         if sport not in ['soccer', 'basketball']:
-            return jsonify({'error': 'Invalid sport selected'}), 400
+            return jsonify({'error': "invalid_sport", 'where': 'validate'}), 400
 
-        # Estado en sesión (Flask)
+        # ------- Estado de sesión HTTP --------
         flask_session['sport'] = sport
         flask_session['facts'] = []
         flask_session['finished'] = False
 
-        # Primera pregunta del asesor (robusto a respuesta inesperada)
-        adviser = BettingAdviser(sport)
-        first_question = adviser.get_betting_advice([]) or {}
-        initial_assistant_text = (first_question.get('message') or '').strip()
-        flask_session['next_fact'] = first_question.get('next_fact')
-
-        if not initial_assistant_text:
+        # ------- Adviser (posible fallo por imports/torch/etc.) --------
+        try:
+            adviser = BettingAdviser(sport)
+            first_question = adviser.get_betting_advice([]) or {}
+            initial_assistant_text = (first_question.get('message') or '').strip() or \
+                                     "Hola. ¿Sobre qué quieres apostar hoy?"
+            flask_session['next_fact'] = first_question.get('next_fact')
+        except Exception as e:
+            current_app.logger.exception("Adviser error")
+            # No derribemos la request por el adviser; seguimos con un mensaje por defecto
             initial_assistant_text = "Hola. ¿Sobre qué quieres apostar hoy?"
 
-        # Crear sesión de chat persistente
-        chat_sess = ChatSession(
-            user_id=current_user.id,
-            sport=sport,
-            title=f"{sport.capitalize()} • {getattr(current_user, 'username', 'usuario')}"
-        )
-        db.session.add(chat_sess)
-        db.session.flush()  # obtener id sin cerrar la transacción
+        # ------- DB PRECHECK (¿hay conexión?) --------
+        try:
+            db.session.execute(db.text("SELECT 1"))
+        except OperationalError as e:
+            current_app.logger.exception("DB connection error")
+            return jsonify({'error': 'db_error', 'where': 'precheck'}), 500
 
-        # Mensajes iniciales del asistente
-        confirm_text = f'Has seleccionado {sport.capitalize()}.'
-        db.session.add(ChatMessage(session_id=chat_sess.id, role='assistant', content=confirm_text))
-        db.session.add(ChatMessage(session_id=chat_sess.id, role='assistant', content=initial_assistant_text))
-        db.session.commit()
+        # ------- Persistir ChatSession + mensajes --------
+        try:
+            chat_sess = ChatSession(
+                user_id=current_user.id,
+                sport=sport,
+                title=f"{sport.capitalize()} • {getattr(current_user, 'username', 'usuario')}"
+            )
+            db.session.add(chat_sess)
+            db.session.flush()  # obtiene id
+
+            confirm_text = f'Has seleccionado {sport.capitalize()}.'
+            db.session.add(ChatMessage(session_id=chat_sess.id, role='assistant', content=confirm_text))
+            db.session.add(ChatMessage(session_id=chat_sess.id, role='assistant', content=initial_assistant_text))
+            db.session.commit()
+        except IntegrityError as e:
+            db.session.rollback()
+            current_app.logger.exception("DB integrity error")
+            return jsonify({'error': 'db_integrity', 'where': 'commit'}), 500
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            current_app.logger.exception("DB SQLAlchemy error")
+            return jsonify({'error': 'db_sqlalchemy', 'where': 'commit'}), 500
 
         return jsonify({
-            'message': confirm_text,
+            'message': f'Has seleccionado {sport.capitalize()}.',
             'next_message': initial_assistant_text,
             'session_id': chat_sess.id
         }), 200
 
     except Exception as e:
         db.session.rollback()
-        current_app.logger.exception("Error en /bot/select_sport")
-        return jsonify({'error': 'server_error'}), 500
+        current_app.logger.exception("Error en /bot/select_sport (unexpected)")
+        return jsonify({'error': 'server_error', 'where': 'unexpected'}), 500
+
 
 @bot.route('/get_response', methods=['POST'])
 @login_required
