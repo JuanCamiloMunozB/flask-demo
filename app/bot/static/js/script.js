@@ -1,10 +1,16 @@
+// =========================
 // Estado global
+// =========================
 let CURRENT_SESSION_ID = null;
 
 // Deshabilitar enviar hasta que el usuario elija deporte
-document.getElementById("sendBtn").disabled = true;
+const sendBtn = document.getElementById("sendBtn");
+const userInput = document.getElementById("userInput");
+sendBtn.disabled = true;
 
-// Seleccionar deporte y obtener la primera pregunta
+// =========================
+// Seleccionar deporte
+// =========================
 async function selectSport(sport) {
   try {
     // Ocultar botones de selección
@@ -16,15 +22,16 @@ async function selectSport(sport) {
     soccerBtn.style.display = "none";
     basketBtn.style.display = "none";
 
-    document.getElementById("sendBtn").disabled = false;
+    sendBtn.disabled = false;
 
-    addMessage("user", sport === 'soccer' ? "Quiero apostar en fútbol" : "Quiero apostar en basketball");
+    addMessage("user", sport === "soccer" ? "Quiero apostar en fútbol" : "Quiero apostar en basketball");
 
     const resp = await fetch("/bot/select_sport", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sport })
     });
+
     const data = await resp.json();
 
     if (!resp.ok) {
@@ -32,7 +39,7 @@ async function selectSport(sport) {
       return;
     }
 
-    // Guardamos el session_id que crea el backend
+    // Guardar session_id creado en el backend
     CURRENT_SESSION_ID = data.session_id || null;
 
     addMessage("bot", data.message);
@@ -48,16 +55,15 @@ async function selectSport(sport) {
   }
 }
 
-document.getElementById("userInput").focus();
-
-// Enviar respuesta del usuario al sistema experto
+// =========================
+// Enviar mensaje
+// =========================
 async function sendMessage() {
-  const input = document.getElementById("userInput");
-  const message = input.value.trim();
+  const message = userInput.value.trim();
   if (message === "") return;
 
   addMessage("user", message);
-  input.value = "";
+  userInput.value = "";
 
   // Mostrar mensaje de carga
   const loadingMsg = addMessage("bot", "Procesando información...", true);
@@ -67,7 +73,7 @@ async function sendMessage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        message: message,
+        message,
         session_id: CURRENT_SESSION_ID // MUY IMPORTANTE
       })
     });
@@ -83,19 +89,19 @@ async function sendMessage() {
     loadingMsg.textContent = data.message;
 
     if (data.finished) {
-      document.getElementById("sendBtn").disabled = true;
+      sendBtn.disabled = true;
       document.getElementById("restartBtn").style.display = "inline-block";
       if (data.next_message) {
         addMessage("bot", data.next_message);
       }
     }
 
-    // Actualiza session_id si el backend lo envía (por compat)
+    // Por compatibilidad: si backend devuelve session_id, lo actualizamos
     if (data.session_id) {
       CURRENT_SESSION_ID = data.session_id;
     }
 
-    // Refresca historial (por la actualización de updated_at)
+    // Refresca historial (updated_at cambió)
     await refreshHistory();
   } catch (err) {
     console.error(err);
@@ -103,36 +109,29 @@ async function sendMessage() {
   }
 }
 
-// Enviar mensaje rápido desde botones (si más adelante agregas quick replies)
-function sendQuickMessage(text) {
-  document.getElementById("userInput").value = text;
-  sendMessage();
-}
+// Enviar mensaje con Enter
+window.addEventListener("DOMContentLoaded", () => {
+  userInput.focus();
+  userInput.addEventListener("keydown", function (event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      sendMessage();
+    }
+  });
 
-// Agregar mensajes al chat
-function addMessage(sender, text, isLoading = false) {
-  const chat = document.getElementById("chat");
-  const msgDiv = document.createElement("div");
-  msgDiv.className = `message ${sender}`;
+  // Carga historial al iniciar
+  refreshHistory();
+});
 
-  if (isLoading) {
-    msgDiv.innerHTML = '<span class="spinner"></span> ' + text;
-  } else {
-    msgDiv.innerHTML = text.replace(/\n/g, "<br>");
-  }
-
-  chat.appendChild(msgDiv);
-  chat.scrollTop = chat.scrollHeight;
-  return msgDiv;
-}
-
-// Cargar historial de sesiones
+// =========================
+// Historial
+// =========================
 async function refreshHistory() {
   try {
     const resp = await fetch("/bot/history");
     if (!resp.ok) return;
-    const sessions = await resp.json();
 
+    const sessions = await resp.json();
     const ul = document.getElementById("historyList");
     ul.innerHTML = "";
 
@@ -144,17 +143,18 @@ async function refreshHistory() {
       return;
     }
 
-    sessions.forEach(s => {
+    sessions.forEach((s) => {
       const li = document.createElement("li");
       li.className = "list-group-item list-group-item-action d-flex justify-content-between align-items-center";
       const title = s.title || "Conversación";
       const time = s.updated_at ? new Date(s.updated_at).toLocaleString() : "";
+
       li.innerHTML = `
         <span>
           <strong>${escapeHTML(title)}</strong>
           <small class="text-muted d-block">${s.sport ? escapeHTML(s.sport) : "-"}</small>
         </span>
-        <span class="badge bg-secondary">${time}</span>
+        <span class="badge">${time}</span>
       `;
       li.style.cursor = "pointer";
       li.onclick = () => loadSession(s.id);
@@ -165,7 +165,6 @@ async function refreshHistory() {
   }
 }
 
-// Cargar una sesión (reemplaza la conversación en pantalla)
 async function loadSession(sessionId) {
   try {
     const resp = await fetch(`/bot/history/${sessionId}`);
@@ -177,11 +176,11 @@ async function loadSession(sessionId) {
 
     CURRENT_SESSION_ID = data.session.id;
 
-    // Reemplaza contenido del chat por el historial de esa sesión
+    // Reemplazar contenido del chat por el historial de esa sesión
     clearChat();
 
     const messages = data.messages || [];
-    messages.forEach(m => {
+    messages.forEach((m) => {
       if (m.role === "user") addMessage("user", m.content);
       else addMessage("bot", m.content);
     });
@@ -190,11 +189,11 @@ async function loadSession(sessionId) {
     document.getElementById("sportButtons").style.display = "none";
     document.getElementById("soccerBtn").style.display = "none";
     document.getElementById("basketBtn").style.display = "none";
-    document.getElementById("sendBtn").disabled = false;
+    sendBtn.disabled = false;
     document.getElementById("restartBtn").style.display = "inline-block";
 
     // Cierra el drawer si estaba abierto
-    const offcanvasEl = document.getElementById('historyDrawer');
+    const offcanvasEl = document.getElementById("historyDrawer");
     const oc = bootstrap.Offcanvas.getInstance(offcanvasEl);
     if (oc) oc.hide();
   } catch (e) {
@@ -202,35 +201,26 @@ async function loadSession(sessionId) {
   }
 }
 
-function clearChat() {
+// =========================
+/* Utilidades de UI */
+// =========================
+function addMessage(sender, text, isLoading = false) {
   const chat = document.getElementById("chat");
-  chat.innerHTML = '';
+  const msgDiv = document.createElement("div");
+  msgDiv.className = `message ${sender}`;
+
+  if (isLoading) {
+    msgDiv.innerHTML = '<span class="spinner"></span> ' + text;
+  } else {
+    msgDiv.innerHTML = (text || "").replace(/\n/g, "<br>");
+  }
+
+  chat.appendChild(msgDiv);
+  chat.scrollTop = chat.scrollHeight;
+  return msgDiv;
 }
 
-// Utilidad simple para evitar XSS en títulos/sports
-function escapeHTML(str) {
-  return (str || "").replace(/[&<>"']/g, s => (
-    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[s]
-  ));
-}
-
-// Focus input and allow Enter key to submit
-window.addEventListener("DOMContentLoaded", () => {
-  const input = document.getElementById("userInput");
-  input.focus();
-  input.addEventListener("keydown", function (event) {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      sendMessage();
-    }
-  });
-
-  // Carga historial al iniciar
-  refreshHistory();
-});
-
-function restartConversation() {
-  // Limpiar el chat
+function clearChat() {
   const chat = document.getElementById("chat");
   chat.innerHTML = `
     <div class="message bot">
@@ -238,6 +228,18 @@ function restartConversation() {
       Hola. ¿Sobre qué deporte quieres apostar hoy?
     </div>
   `;
+}
+
+function escapeHTML(str) {
+  return (str || "").replace(/[&<>"']/g, (s) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[s]));
+}
+
+// =========================
+// Nueva conversación
+// =========================
+function restartConversation() {
+  // Limpiar el chat
+  clearChat();
 
   // Restaurar botones y entrada
   document.getElementById("sportButtons").style.display = "flex";
@@ -246,9 +248,9 @@ function restartConversation() {
   document.getElementById("restartBtn").style.display = "none";
 
   // Deshabilitar enviar hasta que elijan deporte
-  document.getElementById("sendBtn").disabled = true;
+  sendBtn.disabled = true;
 
   // Limpiar input y sesión actual
-  document.getElementById("userInput").value = "";
+  userInput.value = "";
   CURRENT_SESSION_ID = null;
 }
