@@ -32,3 +32,4 @@ class Config:
     # Por si luego usamos el SDK de Supabase o REST
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
+    

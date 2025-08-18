@@ -15,8 +15,13 @@ def index():
 @login_required
 def select_sport():
     try:
-        data = request.get_json() or {}
-        sport = (data.get('sport') or '').lower()
+        # Acepta JSON silenciosamente para no lanzar BadRequest si no es válido
+        data = request.get_json(silent=True) or {}
+
+        # Acepta 'sport' o 'message' como alias y normaliza
+        sport = (data.get('sport') or data.get('message') or '').strip().lower()
+        if not sport:
+            return jsonify({'error': "Falta 'sport' en el cuerpo JSON"}), 400
 
         if sport not in ['soccer', 'basketball']:
             return jsonify({'error': 'Invalid sport selected'}), 400
@@ -26,10 +31,14 @@ def select_sport():
         flask_session['facts'] = []
         flask_session['finished'] = False
 
-        # Primera pregunta del asesor
+        # Primera pregunta del asesor (robusto a respuesta inesperada)
         adviser = BettingAdviser(sport)
-        first_question = adviser.get_betting_advice([])
+        first_question = adviser.get_betting_advice([]) or {}
+        initial_assistant_text = (first_question.get('message') or '').strip()
         flask_session['next_fact'] = first_question.get('next_fact')
+
+        if not initial_assistant_text:
+            initial_assistant_text = "Hola. ¿Sobre qué quieres apostar hoy?"
 
         # Crear sesión de chat persistente
         chat_sess = ChatSession(
@@ -38,12 +47,10 @@ def select_sport():
             title=f"{sport.capitalize()} • {getattr(current_user, 'username', 'usuario')}"
         )
         db.session.add(chat_sess)
-        db.session.flush()  # obtenemos id sin cerrar la transacción
+        db.session.flush()  # obtener id sin cerrar la transacción
 
         # Mensajes iniciales del asistente
         confirm_text = f'Has seleccionado {sport.capitalize()}.'
-        initial_assistant_text = first_question['message']
-
         db.session.add(ChatMessage(session_id=chat_sess.id, role='assistant', content=confirm_text))
         db.session.add(ChatMessage(session_id=chat_sess.id, role='assistant', content=initial_assistant_text))
         db.session.commit()
@@ -56,9 +63,7 @@ def select_sport():
 
     except Exception as e:
         db.session.rollback()
-        # Esto imprime el traceback completo en los logs de Render
         current_app.logger.exception("Error en /bot/select_sport")
-        # Devolvemos JSON (para que el frontend no intente parsear HTML)
         return jsonify({'error': 'server_error'}), 500
 
 @bot.route('/get_response', methods=['POST'])
