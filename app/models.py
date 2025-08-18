@@ -3,7 +3,7 @@ from flask_login import UserMixin
 from .extensions import db, bcrypt
 
 class User(UserMixin, db.Model):
-	__tablename__ = 'users'
+	__tablename__ = 'app_users'
 
 	id = db.Column(db.Integer, primary_key=True)
 	username = db.Column(db.String(80), unique=True, nullable=False)
@@ -26,7 +26,7 @@ class ChatSession(db.Model):
     # FIX AQUÍ: apuntar a 'users.id' (tabla plural)
     user_id = db.Column(
         db.Integer,
-        db.ForeignKey("users.id", ondelete="CASCADE"),
+        db.ForeignKey("app_users.id", ondelete="CASCADE"),
         nullable=False
     )
 
