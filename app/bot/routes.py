@@ -51,6 +51,7 @@ def select_sport():
 
         # ------- Persistir ChatSession + mensajes --------
         try:
+            
             chat_sess = ChatSession(
                 user_id=current_user.id,
                 sport=sport,
@@ -87,81 +88,90 @@ def select_sport():
 @bot.route('/get_response', methods=['POST'])
 @login_required
 def get_bot_response():
-    payload = request.get_json() or {}
-    user_input = (payload.get('message') or '').strip()
-    req_session_id = payload.get('session_id')
+    try:
+        payload = request.get_json(silent=True) or {}
+        user_input = (payload.get('message') or '').strip()
+        req_session_id = payload.get('session_id')
 
-    if 'sport' not in flask_session:
-        return jsonify({'message': 'Primero selecciona un deporte.', 'finished': False})
+        if not user_input:
+            return jsonify({'message': 'Por favor responde la pregunta para continuar.', 'finished': False}), 400
 
-    if not user_input:
-        return jsonify({'message': 'Por favor responde la pregunta para continuar.', 'finished': False})
+        # 1) Resolver la sesión primero (FUENTE DE LA VERDAD)
+        chat_sess = None
+        if req_session_id:
+            chat_sess = ChatSession.query.filter_by(id=req_session_id, user_id=current_user.id).first()
+            if not chat_sess:
+                return jsonify({'message': 'Sesión no encontrada o no pertenece al usuario.', 'finished': False}), 404
+        else:
+            # Si no enviaron session_id, tomamos la última activa del usuario
+            chat_sess = (ChatSession.query
+                         .filter_by(user_id=current_user.id, is_active=True)
+                         .order_by(ChatSession.updated_at.desc())
+                         .first())
+            if not chat_sess:
+                return jsonify({'message': 'Primero selecciona un deporte.', 'finished': False}), 400
 
-    if flask_session.get('finished'):
-        return jsonify({'message': 'La conversación ya terminó. Selecciona otro deporte para comenzar de nuevo.', 'finished': True})
+        # 2) Determinar el deporte desde la sesión (no depender de flask_session)
+        sport = chat_sess.sport
+        if not sport:
+            return jsonify({'message': 'Sesión sin deporte asociado.', 'finished': True}), 400
 
-    sport = flask_session['sport']
-    adviser =  BettingAdviser(sport)
+        # Mantener compatibilidad con tu lógica de "facts"
+        flask_session['sport'] = sport
 
-    # === NUEVO: resolver/crear la sesión de chat persistente ===
-    chat_sess = None
-    if req_session_id:
-        chat_sess = ChatSession.query.filter_by(id=req_session_id, user_id=current_user.id).first()
-        if not chat_sess:
-            return jsonify({'message': 'Sesión no encontrada o no pertenece al usuario.', 'finished': False}), 404
-    else:
-        # Si el front aún no envía session_id, recupera la última sesión activa del usuario y deporte actual
-        chat_sess = (ChatSession.query
-                     .filter_by(user_id=current_user.id, sport=sport, is_active=True)
-                     .order_by(ChatSession.updated_at.desc())
-                     .first())
-        if not chat_sess:
-            # Crea una nueva para no romper flujo
-            chat_sess = ChatSession(
-                user_id=current_user.id,
-                sport=sport,
-                title=f"{sport.capitalize()} • {getattr(current_user, 'username', 'usuario')}"
-            )
-            db.session.add(chat_sess)
-            db.session.commit()
+        # 3) Si la sesión ya terminó, corta acá
+        if not chat_sess.is_active:
+            return jsonify({
+                'message': 'La conversación ya terminó. Selecciona otro deporte para comenzar de nuevo.',
+                'finished': True,
+                'session_id': chat_sess.id
+            }), 200
 
-    # === Guardar mensaje del usuario ===
-    db.session.add(ChatMessage(session_id=chat_sess.id, role='user', content=user_input))
-    db.session.commit()
-
-    # === Tu lógica original con facts/next_fact ===
-    facts = flask_session.get('facts', [])
-    next_fact_key = flask_session.get('next_fact')
-
-    if next_fact_key:
-        facts.append({next_fact_key: user_input})
-
-    response = adviser.get_betting_advice(facts)
-
-    flask_session['facts'] = facts
-    flask_session['next_fact'] = response.get('next_fact')
-    flask_session['finished'] = response['is_final']
-
-    assistant_text = response['message']
-
-    # === Guardar respuesta del asistente ===
-    db.session.add(ChatMessage(session_id=chat_sess.id, role='assistant', content=assistant_text))
-    db.session.commit()
-
-    # Si terminó, marca la sesión como no activa y con ended_at
-    if response['is_final']:
-        chat_sess.is_active = False
-        from sqlalchemy import func
-        chat_sess.ended_at = db.func.now()
+        # 4) Guardar mensaje del usuario
+        db.session.add(ChatMessage(session_id=chat_sess.id, role='user', content=user_input))
         db.session.commit()
 
-    # Mantener estructura original; si el front quiere, puede usar session_id
-    return jsonify({
-        'message': assistant_text,
-        'finished': response['is_final'],
-        'next_message': 'Puedes seleccionar otro deporte para una nueva recomendación.' if response['is_final'] else None,
-        'session_id': chat_sess.id
-    })
+        # 5) Preparar facts
+        facts = flask_session.get('facts', [])
+        next_fact_key = flask_session.get('next_fact')
+        if next_fact_key:
+            facts.append({next_fact_key: user_input})
+
+        # 6) Adviser robusto
+        try:
+            adviser = BettingAdviser(sport)
+            response = adviser.get_betting_advice(facts) or {}
+        except Exception:
+            current_app.logger.exception("Adviser error")
+            response = {}
+
+        assistant_text = (response.get('message') or 'Estoy procesando tu información...')
+        is_final = bool(response.get('is_final'))
+        next_fact = response.get('next_fact')
+
+        # Actualizar estado de sesión HTTP (opcional / legacy)
+        flask_session['facts'] = facts
+        flask_session['next_fact'] = next_fact
+        flask_session['finished'] = is_final
+
+        # 7) Guardar respuesta del asistente y cerrar si aplica
+        db.session.add(ChatMessage(session_id=chat_sess.id, role='assistant', content=assistant_text))
+        if is_final:
+            chat_sess.is_active = False
+            chat_sess.ended_at = db.func.now()
+        db.session.commit()
+
+        return jsonify({
+            'message': assistant_text,
+            'finished': is_final,
+            'next_message': 'Puedes seleccionar otro deporte para una nueva recomendación.' if is_final else None,
+            'session_id': chat_sess.id
+        }), 200
+
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Error en /bot/get_response (unexpected)")
+        return jsonify({'error': 'server_error', 'where': 'unexpected'}), 500
 
 # === NUEVOS ENDPOINTS DE HISTORIAL ===
 
