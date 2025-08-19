@@ -135,11 +135,20 @@ def get_bot_response():
         facts = flask_session.get('facts', [])
         next_fact_key = flask_session.get('next_fact')
         if next_fact_key:
-            facts.append({next_fact_key: user_input})
+            # Verifica si ya existe el next_fact_key en facts y lo actualiza, si no lo agrega
+            updated = False
+            for fact in facts:
+                if next_fact_key in fact:
+                    fact[next_fact_key] = user_input
+                    updated = True
+                    break
+            if not updated:
+                facts.append({next_fact_key: user_input})
 
         # 6) Adviser robusto
         try:
             adviser = BettingAdviser(sport)
+            print(facts)
             response = adviser.get_betting_advice(facts) or {}
         except Exception:
             current_app.logger.exception("Adviser error")
