@@ -801,3 +801,5 @@ python run.py
 #  - http://localhost:5000/login     (para iniciar sesión)
 #  - http://localhost:5000/dashboard (protegido; requiere login)
 ```
+
+Puedes ver el código completo en el repositorio [flask-login-demo](https://github.com/Electromayonaise/flask-login-demo.git).
