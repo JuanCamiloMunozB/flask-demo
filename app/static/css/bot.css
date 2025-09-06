@@ -1,0 +1,75 @@
+/* Bot-specific styles - inherits common styles from main.css */
+
+/* ======================= */
+/* Historial (offcanvas)   */
+/* ======================= */
+.custom-offcanvas {
+  background-color: #1e1e1e;
+  color: #e0e0e0;
+  border-right: 1px solid #2e2e2e;
+}
+
+.custom-offcanvas .offcanvas-header {
+  border-bottom: 1px solid #2e2e2e;
+}
+
+.custom-offcanvas .offcanvas-title {
+  color: #e0e0e0;
+}
+
+.custom-offcanvas .btn-close {
+  filter: invert(1);
+  opacity: 0.8;
+}
+
+.custom-offcanvas .btn-close:hover {
+  opacity: 1;
+}
+
+#historyList .list-group-item {
+  background-color: #2a2a2a;
+  color: #e0e0e0;
+  border-color: #2e2e2e;
+}
+
+#historyList .list-group-item:hover {
+  background-color: #333;
+}
+
+#historyList .list-group-item strong {
+  color: #fff;
+}
+
+#historyList .list-group-item small {
+  color: #aaa;
+}
+
+#historyList .badge {
+  background-color: #cc444b;
+  color: #fff;
+}
+
+/* ======================= */
+/* Botones en header       */
+/* ======================= */
+.btn-outline-custom {
+  color: #e0e0e0;
+  border: 1px solid #2e2e2e;
+  background-color: #2a2a2a;
+}
+
+.btn-outline-custom:hover {
+  border-color: #cc444b;
+  color: #cc444b;
+}
+
+.btn-logout {
+  border: 1px solid #cc444b;
+  color: #cc444b;
+  background: transparent;
+}
+
+.btn-logout:hover {
+  background: #cc444b;
+  color: #fff;
+}

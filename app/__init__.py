@@ -1,39 +1,30 @@
 from flask import Flask
-from .bot import bot
-from .auth import auth
-from .extensions import db, migrate, login_manager, bcrypt
-from .models import User
-from flask import redirect, url_for
-from flask_login import current_user
+from app.config import Config
+from app.core.extensions import init_extensions
+from app.core.error_handlers import register_error_handlers
+from app.blueprints.main import main
+from app.blueprints.auth import auth
+from app.blueprints.bot import bot
 
 
-def create_app(config_object="config.Config"):
+def create_app(config_object=None):
+    """Create and configure the Flask application."""
     app = Flask(__name__)
+    
+    # Load configuration
+    if config_object is None:
+        config_object = Config
     app.config.from_object(config_object)
-
-    # Inicializar extensiones
-    db.init_app(app)
-    migrate.init_app(app, db)
-    login_manager.init_app(app)
-    bcrypt.init_app(app)
-
-    # Configuración de Login
-    login_manager.login_view = 'auth.login'
-
-    # Registro con o sin prefijo
-    app.register_blueprint(bot, url_prefix="/bot")
+    
+    # Initialize extensions
+    init_extensions(app)
+    
+    # Register error handlers
+    register_error_handlers(app)
+    
+    # Register blueprints
+    app.register_blueprint(main)
     app.register_blueprint(auth, url_prefix="/auth")
-
-    # Ruta raíz: redirige al login si el usuario no está autenticado, o al chat (/bot/) si lo está
-    @app.route('/')
-    def root():
-        if current_user.is_authenticated:
-            return redirect(url_for('bot.index'))
-        return redirect(url_for('auth.login'))
-
-    # user loader
-    @login_manager.user_loader
-    def load_user(user_id):
-        return User.query.get(int(user_id))
-
+    app.register_blueprint(bot, url_prefix="/bot")
+    
     return app
