@@ -835,6 +835,4 @@ python run.py
 6. **Templates compartidos**: Los templates están organizados por funcionalidad
 7. **Servicios reutilizables**: La lógica de autenticación puede ser reutilizada en otras partes
 
-Esta estructura es más escalable y mantenible que la versión anterior, siguiendo las mejores prácticas de Flask para aplicaciones más grandes.
-
 Puedes ver el código completo en el repositorio [flask-login-demo](https://github.com/Electromayonaise/flask-login-demo.git).
