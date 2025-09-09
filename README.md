@@ -193,21 +193,20 @@ flask-login-demo/
       auth/
         __init__.py               # Blueprint 'auth'
         forms.py                  # Flask-WTF forms
-        routes.py                 # Rutas /register, /login, /logout
+        routes.py                 # Rutas /register, /login, /logout, /dashboard
     config/
-      __init__.py
       base.py                     # Configuración base y construcción de DB URI
+      development.py              # Configuración de desarrollo
     core/
-      __init__.py
+      exceptions.py               # Excepciones personalizadas
       extensions.py               # db, migrate, login_manager, bcrypt
     models/
-      __init__.py
       user.py                     # Modelo User
     services/
-      __init__.py
       auth_service.py             # Lógica de autenticación
     templates/
       auth/
+        dashboard.html            # Dashboard del usuario
         login.html              
         register.html
     static/
@@ -245,28 +244,36 @@ Recuerda cambiar las variables a las que obtengas de supabase
 ```python
 # config.py
 import os
-from app.config.base import Config
+from app.config.base import Config as BaseConfig
+from app.config.development import DevelopmentConfig
 
-# Factory de configuración que retorna la clase de configuración apropiada
-# según la variable de entorno FLASK_ENV
+# Con esta configuración, puedes fácilmente cambiar entre diferentes entornos simplemente
+# modificando la variable de entorno FLASK_ENV. Por defecto, se usará la configuración
+# de desarrollo si no se especifica otra.
+
+# En esta guia, trabajaremos con DevelopmentConfig.
+
+# from app.config.production import ProductionConfig
+# from app.config.testing import TestingConfig
+
+Config = BaseConfig
+
+config = {
+    'development': DevelopmentConfig,
+    'default': Config
+    # 'production': ProductionConfig,
+    # 'testing': TestingConfig,
+}
+
 def get_config():
-    # Obtiene el entorno actual (development por defecto)
-    env = os.getenv('FLASK_ENV', 'development')
-    
-    # Importa y retorna la configuración específica del entorno
-    if env == 'production':
-        from app.config.production import ProductionConfig
-        return ProductionConfig
-    elif env == 'testing':
-        from app.config.testing import TestingConfig
-        return TestingConfig
-    else:
-        # Por defecto usa configuración de desarrollo
-        from app.config.development import DevelopmentConfig
-        return DevelopmentConfig
+    """Get configuration based on environment."""
+    env = os.getenv('FLASK_ENV', 'default') # Se usa 'default' si no se define FLASK_ENV
+    return config.get(env, Config)
 ```
 
 ### 4.3 app/config/base.py
+
+
 
 ```python
 # app/config/base.py
@@ -290,6 +297,10 @@ def build_db_uri():
     
     # Construye la URI completa con SSL obligatorio
     return f"postgresql+psycopg2://{user}:{pwd}@{host}:{port}/{name}?sslmode=require"
+
+# Flask nos permite definir configuraciones mediante clases. 
+# En este caso, usamos una clase base y luego podemos extenderla para
+# diferentes entornos (desarrollo, producción, testing, etc.).
 
 class Config:
     """Base configuration class."""
@@ -337,6 +348,9 @@ migrate = Migrate()         # Sistema de migraciones de esquema
 login_manager = LoginManager()  # Manejo de sesiones de usuario
 bcrypt = Bcrypt()          # Hash seguro de contraseñas
 
+
+# Para poder usar las extensiones, debemos inicializarlas con la app. 
+# Esto se hace en una función aparte para mantener el código limpio.
 def init_extensions(app):
     """Initialize Flask extensions with the app instance."""
     # Vincula todas las extensiones con la instancia de Flask
@@ -344,14 +358,20 @@ def init_extensions(app):
     migrate.init_app(app, db)
     login_manager.init_app(app)
     bcrypt.init_app(app)
-    
-    # Configuración específica del login manager
-    login_manager.login_view = 'auth.login'  # Ruta por defecto para login
-    
-    # Función para cargar usuarios desde la base de datos
+
+    # Para que el login manager funcione correctamente, necesitamos
+    # definir algunas configuraciones y funciones adicionales.
+
+    # Establece la ruta por defecto a la que se redirige cuando un usuario no autenticado intenta acceder a una página protegida.
+    # Aquí, 'auth.login' es el endpoint del blueprint de autenticación donde se maneja el login. Donde 'auth' es el nombre del blueprint y 'login' es la función de vista.
+    login_manager.login_view = 'auth.login'
+
+    # Esta función se utiliza por Flask-Login para cargar un usuario desde la base de datos usando su ID.
+    # El decorador @login_manager.user_loader indica que esta función será llamada automáticamente por Flask-Login.
+    # Se importa el modelo User y se busca el usuario por su ID usando la consulta User.query.get(int(user_id)).
+    # Si el usuario existe, se retorna el objeto User; si no, retorna None.
     @login_manager.user_loader
     def load_user(user_id):
-        # Importación circular evitada importando aquí
         from app.models.user import User
         return User.query.get(int(user_id))
 ```
@@ -363,21 +383,41 @@ def init_extensions(app):
 from flask_login import UserMixin
 from app.core.extensions import db, bcrypt
 
+# La clase User representa a un usuario en la base de datos para autenticación.
+# Hereda de UserMixin (para integración con Flask-Login) y db.Model (para ORM de SQLAlchemy).
+# UserMixin proporciona métodos y propiedades estándar (como is_authenticated, is_active, get_id) 
+# necesarios para la gestión de sesiones y autenticación de usuarios en Flask-Login.
+# db.Model permite mapear la clase User a una tabla de la base de datos usando SQLAlchemy, 
+# facilitando operaciones CRUD y la persistencia de datos de usuario.
 class User(UserMixin, db.Model):
     """User model for authentication."""
     # Nombre específico de tabla para evitar conflictos con 'users' reservado
     __tablename__ = 'app_users'
     
-    # Campos de la tabla
-    id = db.Column(db.Integer, primary_key=True)  # ID único autoincremental
-    username = db.Column(db.String(80), unique=True, nullable=False)  # Nombre único de usuario
-    password_hash = db.Column(db.String(128), nullable=False)  # Hash de la contraseña (nunca texto plano)
+    # Campos de la tabla (Columnas)
+    # SQLAlchemy nos permite definir las columnas de la tabla como atributos de la clase y especificar sus tipos y restricciones.
+    # En este caso, tenemos:
+    
+    # El campo id es una columna de tipo entero, actúa como clave primaria y se autoincrementa automáticamente.
+    id = db.Column(db.Integer, primary_key=True)
 
+    # El campo username es una columna de tipo cadena (String) con una longitud máxima de 80 caracteres, debe ser único (unique) y no puede ser nulo (nullable=False).
+    # Esto es porque el nombre de usuario es el identificador principal para login, lo que implica que no puede haber dos usuarios con el mismo nombre o que esté vacío.
+    username = db.Column(db.String(80), unique=True, nullable=False)
+
+    # El campo password_hash es una columna de tipo cadena (String) con una longitud máxima de 128 caracteres, no puede ser nulo.
+    # Aquí almacenamos el hash seguro de la contraseña, nunca la contraseña en texto plano, lo que es crucial para la seguridad.
+    password_hash = db.Column(db.String(128), nullable=False)
+
+    # El método set_password genera un hash seguro de la contraseña usando bcrypt,
+    # nunca almacena la contraseña en texto plano, lo que protege contra robos de datos.
     def set_password(self, password: str):
         """Set the user's password hash."""
         # Genera hash seguro de la contraseña usando bcrypt
         self.password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
 
+    # El método check_password verifica si una contraseña dada coincide con el hash almacenado,
+    # permitiendo autenticación segura sin exponer la contraseña original.
     def check_password(self, password: str) -> bool:
         """Check if the provided password matches the user's password hash."""
         # Verifica si la contraseña coincide con el hash almacenado
@@ -395,26 +435,33 @@ class User(UserMixin, db.Model):
 from app.models.user import User
 from app.core.extensions import db
 from app.core.exceptions import AuthenticationError
-
+ 
 class AuthService:
     """Service for user authentication operations."""
     
+    # La función `register_user` verifica si el nombre de usuario ya existe en la base de datos, 
+    # y si no existe, crea un nuevo usuario con la contraseña hasheada para mayor seguridad. 
     @staticmethod
     def register_user(username: str, password: str) -> User:
         """Register a new user."""
         # Verifica si el usuario ya existe en la base de datos
+        # SQLAlchemy nos permite hacer consultas de manera sencilla usando el modelo User, sin la necesidad de escribir SQL directamente.
+        # En este caso, usamos filter_by para buscar un usuario con el mismo nombre.
         if User.query.filter_by(username=username).first():
             raise AuthenticationError("Username already exists")
         
         # Crea un nuevo usuario con contraseña hasheada
         user = User(username=username)
-        user.set_password(password)  # Método que genera el hash seguro
+        user.set_password(password)  # Aqui llamamos al método del modelo User que genera el hash seguro
         
         # Guarda el usuario en la base de datos
         db.session.add(user)
         db.session.commit()
         return user
     
+    # La función `authenticate_user` busca el usuario por nombre de usuario y valida la contraseña 
+    # utilizando el método seguro definido en el modelo de usuario. Si las credenciales no son válidas, 
+    # lanza una excepción personalizada de autenticación.
     @staticmethod
     def authenticate_user(username: str, password: str) -> User:
         """Authenticate a user with username and password."""
@@ -449,30 +496,46 @@ from flask_login import current_user
 from app.core.extensions import init_extensions
 from app.blueprints.auth import auth
 
+# Colocamos esta factory en __init__.py porque en Python ese archivo marca el directorio
+# como paquete y suele usarse como punto de entrada del paquete. Exportar create_app
+# desde app.__init__ permite hacer "from app import create_app" y mantiene la inicialización
+# y el registro de componentes (extensiones, blueprints, rutas) en un único lugar.
+
 def create_app(config_object=None):
-    """Create and configure the Flask application."""
-    # Crea la instancia principal de Flask
+    # Crear y configurar la aplicación Flask (Application Factory)
+    # - Patrón recomendado en Flask: una función que crea y devuelve la app.
+    # - Permite crear varias instancias con distinta configuración (tests, dev, prod).
+    # - Evita importaciones circulares porque la app se crea bajo demanda.
     app = Flask(__name__)
     
-    # Carga la configuración apropiada según el entorno
+    # Cargar la configuración correcta
+    # - Si no se pasa explicitamente un objeto de configuración, se obtiene según entorno.
+    # - app.config.from_object carga solo atributos en MAYÚSCULAS de la clase/ módulo.
+    #   Esto convierte constantes de configuración en valores usados por Flask y extensiones.
     if config_object is None:
         from config import get_config
         config_object = get_config()
     app.config.from_object(config_object)
     
-    # Inicializa todas las extensiones (db, login_manager, etc.)
+    # Inicializar extensiones con la app (db, migrate, login_manager, bcrypt, ...)
     init_extensions(app)
     
-    # Registra los blueprints (módulos de rutas)
+    # Registrar blueprints (módulos de rutas)
+    # - Los blueprints agrupan rutas y recursos (p. ej. auth) y permiten prefijos de URL y
+    #   reutilización/registro múltiple si fuera necesario.
+    # - Registrar en el factory centraliza la estructura de la app al iniciarse.
     app.register_blueprint(auth, url_prefix="/auth")
     
-    # Ruta raíz que redirige según el estado de autenticación
+    # Ruta raíz: comportamiento según estado de autenticación
+    # - current_user es un proxy de Flask-Login que solo funciona dentro del contexto de petición.
+    # - Si el usuario está autenticado, redirigimos a su dashboard; si no, redirigimos al login.
+    # - url_for genera la URL del endpoint 'auth.login' (requiere contexto; aquí se invoca durante la petición).
     @app.route('/')
     def root():
-        # Si el usuario está autenticado, muestra mensaje de bienvenida
+        # Si el usuario está autenticado, mostrar bienvenida
         if current_user.is_authenticated:
-            return f"<h1>Bienvenido {current_user.username}!</h1><a href='/auth/logout'>Cerrar sesión</a>"
-        # Si no está autenticado, redirige al login
+            return redirect(url_for('auth.dashboard'))
+        # Si no está autenticado, redirigir al endpoint de login del blueprint 'auth'
         return redirect(url_for('auth.login'))
     
     return app
@@ -505,6 +568,11 @@ from wtforms import StringField, PasswordField, SubmitField
 from wtforms.validators import DataRequired, Length, EqualTo, ValidationError
 from app.models.user import User
 
+# Formulario de registro y login usando Flask-WTF y WTForms.
+# Estas librerias nos permite crear formularios web con clases de Python, sin necesidad de escribir HTML manualmente.
+# - WTForms: biblioteca independiente que define campos, validadores y lógica de formularios en Python (Field, StringField, PasswordField, validators, etc.). No depende de Flask.
+# - Flask-WTF: extensión para Flask que integra WTForms con la app Flask. Añade CSRF automático, helpers como FlaskForm, validate_on_submit(), soporte para reCAPTCHA y configuración vía app.config, y simplifica obtener datos de request/form.
+# - En práctica: usas WTForms para los campos/validators y Flask-WTF para integrarlo en Flask.
 class RegisterForm(FlaskForm):
     """User registration form."""
     # Campo de nombre de usuario con validaciones
@@ -528,9 +596,12 @@ class RegisterForm(FlaskForm):
     # Botón de envío
     submit = SubmitField('Register')
 
+    # Esta función es un validador personalizado para WTForms y se ejecuta automáticamente cuando existe
+    # un método con el nombre validate_<fieldname> (aquí validate_username) durante la llamada a
+    # form.validate(). No es necesario llamarla explícitamente.
     def validate_username(self, username):
         """Validate that username is unique."""
-        # Validación personalizada: verifica que el username no exista
+        # verifica que el username no exista
         user = User.query.filter_by(username=username.data).first()
         if user:
             raise ValidationError('Username already in use')
@@ -548,32 +619,58 @@ class LoginForm(FlaskForm):
 ```python
 # app/blueprints/auth/routes.py
 from flask import request, render_template, redirect, url_for, flash
-from flask_login import login_user, logout_user, login_required
+from flask_login import current_user, login_user, logout_user, login_required
 from . import auth
 from .forms import RegisterForm, LoginForm
 from app.services.auth_service import AuthService
 from app.core.exceptions import AuthenticationError
+
+# Este archivo define las rutas del blueprint "auth".
+# En Flask los blueprints agrupan funcionalidad relacionada (aquí: autenticación)
+# y se registran en la app principal desde la fábrica de aplicaciones.
+# Esto ayuda a organizar el código y facilita pruebas e importaciones.
+
+# Se importan los formularios WTForms (RegisterForm, LoginForm). WTForms
+# proporciona validación y, si está configurado, protección CSRF.
+# En las vistas se usa form.validate_on_submit() que combina comprobar
+# que la petición es POST y que los validadores pasan correctamente.
+
+# La lógica de negocio de autenticación se delega a AuthService.
+# Las vistas actúan como controladores ligeros: validan entrada, orquestan
+# llamadas al servicio y retornan respuestas HTTP (templates / redirects).
+# Esto sigue el principio de separación de responsabilidades.
+
+# Uso de flash(): Flask almacena mensajes en la sesión para mostrarlos
+# en la siguiente renderización. Es útil para feedback tras un redirect.
 
 @auth.route('/register', methods=['GET', 'POST'])
 def register():
     """Handle user registration."""
     form = RegisterForm()
     
+    # GET: mostrar formulario vacío.
+    # POST: procesar datos enviados. validate_on_submit() maneja
+    # tanto la comprobación de método como la validación del formulario.
     if request.method == 'POST':
         # Si el formulario es válido (pasa todas las validaciones)
         if form.validate_on_submit():
             try:
-                # Intenta registrar el usuario usando el servicio
+                # Delegamos el registro al servicio AuthService.
+                # AuthService encapsula la lógica de negocio (persistencia, validaciones).
                 user = AuthService.register_user(form.username.data, form.password.data)
+                # Post/Redirect/Get: después de un POST exitoso se redirige
+                # para evitar reenvío de formularios al recargar la página.
                 flash('Registration successful! Please log in.', 'success')
                 return redirect(url_for('auth.login'))
             except AuthenticationError as e:
-                # Si hay error (ej: usuario ya existe), muestra mensaje
+                # Traducción de errores de negocio a mensajes para el usuario.
+                # Ejemplo: usuario ya existe.
                 flash(str(e), 'error')
-        # Si hay errores de validación, re-renderiza con errores
+        # Si hay errores de validación, re-renderiza con errores y código 400.
+        # Las plantillas deberían mostrar form.errors para feedback.
         return render_template('register.html', form=form), 400
     
-    # GET request: muestra formulario vacío
+    # GET request: muestra formulario vacío (código 200 implícito)
     return render_template('register.html', form=form)
 
 @auth.route('/login', methods=['GET', 'POST'])
@@ -581,31 +678,41 @@ def login():
     """Handle user login."""
     form = LoginForm()
     
+    # Similar patrón: GET muestra formulario; POST procesa credenciales.
     if request.method == 'POST':
-        # Si el formulario es válido
+        # validate_on_submit() comprueba POST + validadores (incl. CSRF).
         if form.validate_on_submit():
             try:
-                # Intenta autenticar al usuario
+                # AuthService realiza la autenticación y devuelve el usuario.
                 user = AuthService.authenticate_user(form.username.data, form.password.data)
-                login_user(user)  # Inicia la sesión del usuario
+                # Flask-Login: marca al usuario como autenticado en la sesión.
+                login_user(user)
                 flash('Login successful!', 'success')
-                return redirect(url_for('root'))  # Redirige a página principal
+                # Redirige a la raíz (Post/Redirect/Get).
+                return redirect(url_for('root'))
             except AuthenticationError as e:
-                # Credenciales inválidas
+                # Credenciales inválidas traducidas a mensaje visible.
                 flash(str(e), 'error')
-        # Errores de validación o autenticación
+        # Errores de validación o autenticación -> re-render + 400.
         return render_template('login.html', form=form), 400
     
     # GET request: muestra formulario de login
     return render_template('login.html', form=form)
 
 @auth.route('/logout')
-@login_required  # Decorador que requiere que el usuario esté autenticado
+@login_required  # Protege la ruta: sólo accesible si el usuario está autenticado.
 def logout():
     """Logout the current user."""
-    logout_user()  # Termina la sesión del usuario
+    # Flask-Login: termina la sesión/estado de autenticación del usuario.
+    logout_user()
     flash('You have been logged out.', 'info')
     return redirect(url_for('auth.login'))
+
+@auth.route('/dashboard')
+@login_required
+def dashboard():
+    # Página protegida que solo usuarios autenticados pueden ver.
+    return render_template('dashboard.html', username=current_user.username)
 ```
 
 ### 4.13 app/templates/auth/register.html
@@ -620,7 +727,7 @@ def logout():
   <title>Registro - Asistente de Apuestas</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('auth.static', filename='css/common.css') }}" />
+  <link rel="stylesheet" href="{{ url_for('auth.static', filename='css/style.css') }}" />
 </head>
 <body>
 
@@ -636,9 +743,6 @@ def logout():
     <form method="post" action="{{ url_for('auth.register') }}" novalidate>
       {{ form.hidden_tag() }}
 
-      <!--
-      Este bloque de código utiliza la función `get_flashed_messages` de Flask para mostrar mensajes flash en la interfaz. Primero, obtiene los mensajes junto con sus categorías. Si existen mensajes, los recorre y muestra cada uno en un div con una clase de alerta de Bootstrap: si la categoría es 'error', se muestra como 'danger', de lo contrario como 'success'. Esto permite informar al usuario sobre el resultado de acciones recientes, como errores o confirmaciones.
-      -->
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
           {% for category, message in messages %}
@@ -704,7 +808,7 @@ def logout():
   <title>Login - Asistente de Apuestas</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('auth.static', filename='css/common.css') }}" />
+  <link rel="stylesheet" href="{{ url_for('auth.static', filename='css/style.css') }}" />
 </head>
 <body>
 
@@ -768,7 +872,222 @@ def logout():
 </html>
 ```
 
-### 4.15 run.py
+### 4.15 app/templates/auth/dashboard.html
+
+```html
+<!-- app/auth/templates/dashboard.html -->
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('auth.static', filename='css/style.css') }}" />
+</head>
+<body>
+    <div class="chat-container d-flex flex-column">
+        <div class="chat-header">
+            <div class="title"><strong>Dashboard</strong></div>
+        </div>
+        <div class="chat-body p-4">
+            <div class="mb-3">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }}">
+                            {{ message }}
+                        </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+            </div>
+            <p class="mb-3">Bienvenido, <span class="text-accent">{{ username }}</span>.</p>
+            <a class="btn btn-secondary" href="{{ url_for('auth.logout') }}">Cerrar sesión</a>
+        </div>
+    </div>
+</body>
+</html>
+```
+
+### 4.16 app/static/css/style.css
+
+```css
+/* app/auth/static/css/style.css */
+body {
+    background-color: #121212;
+    font-family: 'Segoe UI', sans-serif;
+    color: #e0e0e0;
+}
+
+.chat-container {
+    max-width: 600px;
+    margin: 2rem auto;
+    background-color: #1e1e1e;
+    border-radius: 16px;
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.6);
+    display: flex;
+    flex-direction: column;
+    height: 85vh;
+}
+
+.chat-header {
+    background-color: #1a1a1a;
+    padding: 1rem;
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+    border-bottom: 1px solid #2e2e2e;
+}
+
+.title {
+    font-size: 1.2rem;
+    color: #cc444b;
+}
+
+.text-accent {
+    color: #cc444b;
+}
+
+.chat-body {
+    flex: 1;
+    padding: 1rem;
+    overflow-y: auto;
+}
+
+.message {
+    margin-bottom: 1rem;
+    max-width: 80%;
+    padding: 0.75rem 1rem;
+    border-radius: 20px;
+    line-height: 1.5;
+    font-size: 0.95rem;
+}
+
+.message.user {
+    background-color: #2c2c2c;
+    align-self: flex-end;
+    text-align: right;
+    color: #e0e0e0;
+}
+
+.message.bot {
+    background-color: #cc444b;
+    color: #e0e0e0;
+    border-left: 4px solid #cc444b;
+    align-self: flex-start;
+}
+
+
+.chat-footer {
+    padding: 1rem;
+    border-top: 1px solid #2e2e2e;
+    display: flex;
+    flex-direction: column;
+}
+
+.input-dark {
+    background-color: #2a2a2a;
+    color: #e0e0e0;
+    border: none;
+    border-radius: 10px 0 0 10px;
+}
+
+.input-dark::placeholder {
+    color: #888;
+}
+
+.input-dark:focus {
+    color: #cc444b;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(204, 68, 75, 0.4);
+    background-color: #2a2a2a;
+}
+
+.send-btn {
+    background-color: #cc444b;
+    color: #fff;
+    border: none;
+    border-radius: 0 10px 10px 0;
+    transition: background-color 0.3s;
+}
+
+.send-btn:hover {
+    background-color: #a9383e;
+}
+
+.sport-btn {
+    background-color: transparent;
+    color: #cc444b;
+    border: 1px solid #cc444b;
+    border-radius: 30px;
+    padding: 0.5rem 1.2rem;
+    transition: background-color 0.3s, color 0.3s;
+}
+
+.sport-btn:hover {
+    background-color: #cc444b;
+    color: #fff;
+}
+
+.restart-btn {
+    background-color: #333;
+    color: #cc444b;
+    border-radius: 30px;
+    border: 1px solid #cc444b;
+    transition: background-color 0.3s, color 0.3s;
+}
+
+.restart-btn:hover {
+    background-color: #cc444b;
+    color: #fff;
+}
+
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #1a1a1a;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: #cc444b;
+    border-radius: 10px;
+    border: 2px solid #1a1a1a;
+}
+
+* {
+    scrollbar-width: thin;
+    scrollbar-color: #cc444b #1a1a1a;
+}
+
+@media (max-width: 768px) {
+    .chat-container {
+        height: 95vh;
+        border-radius: 0;
+    }
+}
+
+
+.spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 3px solid #ccc;
+    border-top: 3px solid #333;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-right: 5px;
+    vertical-align: middle;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+```
+
+### 4.17 run.py
 
 ```python
 # run.py
@@ -822,6 +1141,7 @@ python run.py
 # La aplicación estará disponible en:
 #  - http://localhost:5000/auth/register  (crear nueva cuenta de usuario)
 #  - http://localhost:5000/auth/login     (iniciar sesión con credenciales)
+#  - http://localhost:5000/auth/dashboard (dashboard del usuario autenticado)
 #  - http://localhost:5000/               (página principal protegida - requiere login)
 ```
 
@@ -835,4 +1155,4 @@ python run.py
 6. **Templates compartidos**: Los templates están organizados por funcionalidad
 7. **Servicios reutilizables**: La lógica de autenticación puede ser reutilizada en otras partes
 
-Puedes ver el código completo en el repositorio [flask-login-demo](https://github.com/Electromayonaise/flask-login-demo.git).
+Puedes ver el código completo en el repositorio [flask-login-demo](https://github.com/JuanCamiloMunozB/flask-login-demo).
